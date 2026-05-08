@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>26區生存榜 - 觀戰模式</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Noto+Sans+TC:wght@400;700&display=swap');
+        :root { --neon-blue: #00d2ff; --dark-bg: #020617; }
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: var(--dark-bg); color: #f1f5f9; overflow-x: hidden; }
+        .cyber-panel { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(10px); border-bottom: 2px solid #334155; }
+        .score-font { font-family: 'Orbitron', sans-serif; }
+        
+        @keyframes pulse-update {
+            0% { background-color: rgba(0, 210, 255, 0); }
+            50% { background-color: rgba(0, 210, 255, 0.1); transform: scale(1.01); }
+            100% { background-color: rgba(0, 210, 255, 0); transform: scale(1); }
+        }
+        .just-updated { animation: pulse-update 2s ease; border-color: var(--neon-blue) !important; }
+    </style>
+</head>
+<body class="pb-10">
+
+    <div class="sticky top-0 z-50 cyber-panel p-6 mb-8">
+        <div class="max-w-4xl mx-auto flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold tracking-widest score-font text-white flex items-center gap-3">
+                    <span id="syncDot" class="flex h-3 w-3 rounded-full bg-green-500"></span>
+                    SURVIVAL LEADERBOARD
+                </h1>
+                <p class="text-xs text-slate-400 mt-1 uppercase tracking-tighter">Real-time survival data stream</p>
+            </div>
+            <button onclick="loadFromGoogleSheet()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 border border-slate-700">
+                🔄 立即刷新數據
+            </button>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto px-4">
+        <div id="boardContainer" class="space-y-4">
+            <div class="flex flex-col items-center justify-center py-20 opacity-50">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+                <p class="score-font text-sm">LOADING STREAM...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 必須與主程式 URL 相同 ---
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz04XrY8ic07ToJPmUn_1rLCAobkTwD9_iWXG_51WhqEj_r2eDsAan8ns21H5_aI6lW/exec"; 
+        const REFRESH_INTERVAL = 10000; // 每 10 秒自動刷新
+
+        let players = [];
+
+        async function loadFromGoogleSheet() {
+            if (!SCRIPT_URL.startsWith("https")) return;
+            const dot = document.getElementById('syncDot');
+            dot.classList.add('animate-ping');
+
+            try {
+                const response = await fetch(SCRIPT_URL);
+                const cloudData = await response.json();
+                
+                if (cloudData && cloudData.length > 0) {
+                    // 檢查數據是否有變動，決定是否觸發動畫
+                    players = cloudData;
+                    render();
+                }
+            } catch (e) {
+                console.error("Connection lost");
+            } finally {
+                setTimeout(() => dot.classList.remove('animate-ping'), 1000);
+            }
+        }
+
+        function render() {
+            const container = document.getElementById('boardContainer');
+            // 排序：分數高至低
+            const sorted = [...players].sort((a, b) => b.score - a.score || a.id - b.id);
+
+            container.innerHTML = sorted.map((p, index) => {
+                const rank = index + 1;
+                // 檢查是否為 1 分鐘內更新過的玩家 (用於視覺提示)
+                const isNewUpdate = (Date.now() - p.lastUpdate) < 30000;
+                
+                let rankStyle = "text-slate-500 border-slate-800";
+                let badge = "";
+                if (rank === 1) { rankStyle = "text-yellow-400 border-yellow-500/50 bg-yellow-500/5 shadow-[0_0_15px_rgba(234,179,8,0.1)]"; badge = "🏆"; }
+                else if (rank === 2) { rankStyle = "text-slate-300 border-slate-400/50 bg-slate-400/5"; badge = "🥈"; }
+                else if (rank === 3) { rankStyle = "text-orange-400 border-orange-500/50 bg-orange-500/5"; badge = "🥉"; }
+
+                return `
+                    <div class="player-row ${isNewUpdate ? 'just-updated' : ''} bg-slate-900/40 border ${rankStyle} rounded-2xl p-5 flex items-center gap-6 transition-all duration-700">
+                        <div class="score-font font-bold w-12 text-center text-3xl">
+                            ${rank}
+                        </div>
+                        
+                        <div class="flex-1">
+                            <div class="flex flex-col">
+                                <span class="text-[10px] text-slate-500 font-mono tracking-widest mb-1">UNIT_${String(p.id).padStart(2, '0')}</span>
+                                <span class="text-xl font-bold tracking-wide text-white flex items-center gap-2">
+                                    ${p.name} ${badge}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="text-right">
+                            <div class="score-font text-3xl font-bold ${p.score < 0 ? 'text-red-500' : 'text-cyan-400'}">
+                                ${p.score.toLocaleString()}
+                            </div>
+                            <div class="text-[10px] text-slate-500 uppercase mt-1">Survival Points</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        window.onload = () => {
+            loadFromGoogleSheet();
+            setInterval(loadFromGoogleSheet, REFRESH_INTERVAL);
+        };
+    </script>
+</body>
+</html>
